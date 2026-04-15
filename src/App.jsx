@@ -13,6 +13,31 @@ const DEFAULT_TYPES = [
   { id: 3, name: '学习', color: '#f59e0b' }
 ]
 
+const getOfflineQueue = () => {
+  const saved = localStorage.getItem('todotogether-offline-queue')
+  return saved ? JSON.parse(saved) : []
+}
+
+const saveOfflineQueue = (queue) => {
+  localStorage.setItem('todotogether-offline-queue', JSON.stringify(queue))
+}
+
+const addToOfflineQueue = (operation) => {
+  const queue = getOfflineQueue()
+  queue.push({
+    ...operation,
+    id: Date.now(),
+    timestamp: new Date().toISOString()
+  })
+  saveOfflineQueue(queue)
+}
+
+const removeFromOfflineQueue = (operationId) => {
+  const queue = getOfflineQueue()
+  const filtered = queue.filter(op => op.id !== operationId)
+  saveOfflineQueue(filtered)
+}
+
 function App() {
   const [currentUser, setCurrentUser] = useState('user1')
   const [todos, setTodos] = useState(() => {
@@ -41,6 +66,9 @@ function App() {
   const [showTypeManager, setShowTypeManager] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeColor, setNewTypeColor] = useState('#667eea')
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [pendingSyncCount, setPendingSyncCount] = useState(getOfflineQueue().length)
+  const [isSyncing, setIsSyncing] = useState(false)
 
   const refreshData = async () => {
     try {
@@ -88,6 +116,62 @@ function App() {
     }
   }
 
+  const syncOfflineOperations = async () => {
+    const queue = getOfflineQueue()
+    if (queue.length === 0 || !supabaseConfigured || !isOnline) {
+      return
+    }
+
+    console.log('开始同步离线操作，共', queue.length, '个')
+    setIsSyncing(true)
+    setSyncStatus('synced')
+
+    let successCount = 0
+    const failedOperations = []
+
+    for (const operation of queue) {
+      try {
+        console.log('同步操作:', operation)
+        
+        switch (operation.type) {
+          case 'addTodo':
+            await todoAPI.addTodo(operation.data)
+            break
+          case 'toggleTodo':
+            await todoAPI.toggleTodo(operation.data.id, operation.data.completed)
+            break
+          case 'deleteTodo':
+            await todoAPI.deleteTodo(operation.data.id)
+            break
+          case 'addType':
+            await todoAPI.addType(operation.data)
+            break
+          case 'deleteType':
+            await todoAPI.deleteType(operation.data.id)
+            break
+        }
+
+        removeFromOfflineQueue(operation.id)
+        successCount++
+      } catch (error) {
+        console.error('同步操作失败:', operation, error)
+        failedOperations.push(operation)
+      }
+    }
+
+    if (failedOperations.length > 0) {
+      saveOfflineQueue(failedOperations)
+    }
+
+    setPendingSyncCount(getOfflineQueue().length)
+    setIsSyncing(false)
+    
+    if (successCount > 0) {
+      console.log('同步完成，成功:', successCount, '失败:', failedOperations.length)
+      await refreshData()
+    }
+  }
+
   useEffect(() => {
     let isMounted = true
     let pollInterval = null
@@ -96,19 +180,39 @@ function App() {
       const success = await refreshData()
       if (!success && isMounted) {
         fallBackToLocal()
+      } else {
+        await syncOfflineOperations()
       }
     }
+
+    const handleOnline = () => {
+      console.log('网络已连接')
+      setIsOnline(true)
+      if (supabaseConfigured) {
+        syncOfflineOperations()
+      }
+    }
+
+    const handleOffline = () => {
+      console.log('网络已断开')
+      setIsOnline(false)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
 
     init()
     
     pollInterval = setInterval(async () => {
-      if (supabaseConfigured) {
+      if (supabaseConfigured && isOnline) {
         await refreshData()
       }
     }, 5000)
 
     return () => {
       isMounted = false
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
       if (pollInterval) clearInterval(pollInterval)
     }
   }, [])
@@ -120,12 +224,21 @@ function App() {
     }
   }, [todos, types, supabaseConfigured])
 
+  useEffect(() => {
+    if (isOnline && supabaseConfigured && !isSyncing) {
+      const timer = setTimeout(() => {
+        syncOfflineOperations()
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [pendingSyncCount, isOnline, supabaseConfigured, isSyncing])
+
   const addTodo = async (e) => {
     e.preventDefault()
     if (!inputValue.trim()) return
 
     console.log('添加待办 - selectedTypeId:', selectedTypeId, '类型:', typeof selectedTypeId)
-    console.log('添加待办:', { text: inputValue.trim(), typeId: selectedTypeId, supabaseConfigured })
+    console.log('添加待办:', { text: inputValue.trim(), typeId: selectedTypeId, supabaseConfigured, isOnline })
 
     const newTodo = {
       id: Date.now(),
@@ -142,48 +255,66 @@ function App() {
     setInputValue('')
     setSelectedTypeId(null)
 
-    if (supabaseConfigured) {
+    if (supabaseConfigured && isOnline) {
       try {
         console.log('发送到 Supabase...')
         const result = await todoAPI.addTodo(newTodo)
         console.log('Supabase 添加结果:', result)
       } catch (error) {
-        console.error('添加到 Supabase 失败:', error)
+        console.error('添加到 Supabase 失败，加入离线队列:', error)
+        addToOfflineQueue({ type: 'addTodo', data: newTodo })
+        setPendingSyncCount(getOfflineQueue().length)
       }
+    } else if (supabaseConfigured) {
+      console.log('离线，添加到离线队列')
+      addToOfflineQueue({ type: 'addTodo', data: newTodo })
+      setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const toggleTodo = async (id, currentCompleted) => {
-    console.log('切换任务 - id:', id, '当前状态:', currentCompleted, 'supabaseConfigured:', supabaseConfigured)
+    console.log('切换任务 - id:', id, '当前状态:', currentCompleted, 'supabaseConfigured:', supabaseConfigured, 'isOnline:', isOnline)
 
     setTodos(todos.map(todo =>
       todo.id === id ? { ...todo, completed: !currentCompleted } : todo
     ))
 
-    if (supabaseConfigured) {
+    if (supabaseConfigured && isOnline) {
       try {
         console.log('发送到 Supabase...')
         const result = await todoAPI.toggleTodo(id, !currentCompleted)
         console.log('Supabase 切换结果:', result)
       } catch (error) {
-        console.error('切换到 Supabase 失败:', error)
+        console.error('切换到 Supabase 失败，加入离线队列:', error)
+        addToOfflineQueue({ type: 'toggleTodo', data: { id, completed: !currentCompleted } })
+        setPendingSyncCount(getOfflineQueue().length)
       }
+    } else if (supabaseConfigured) {
+      console.log('离线，添加到离线队列')
+      addToOfflineQueue({ type: 'toggleTodo', data: { id, completed: !currentCompleted } })
+      setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const deleteTodo = async (id) => {
-    console.log('删除任务 - id:', id, 'supabaseConfigured:', supabaseConfigured)
+    console.log('删除任务 - id:', id, 'supabaseConfigured:', supabaseConfigured, 'isOnline:', isOnline)
 
     setTodos(todos.filter(todo => todo.id !== id))
 
-    if (supabaseConfigured) {
+    if (supabaseConfigured && isOnline) {
       try {
         console.log('发送到 Supabase...')
         const result = await todoAPI.deleteTodo(id)
         console.log('Supabase 删除结果:', result)
       } catch (error) {
-        console.error('删除到 Supabase 失败:', error)
+        console.error('删除到 Supabase 失败，加入离线队列:', error)
+        addToOfflineQueue({ type: 'deleteTodo', data: { id } })
+        setPendingSyncCount(getOfflineQueue().length)
       }
+    } else if (supabaseConfigured) {
+      console.log('离线，添加到离线队列')
+      addToOfflineQueue({ type: 'deleteTodo', data: { id } })
+      setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
@@ -192,7 +323,7 @@ function App() {
     if (!newTypeName.trim()) return
 
     const name = newTypeName.trim()
-    console.log('添加类型:', { name, color: newTypeColor })
+    console.log('添加类型:', { name, color: newTypeColor, supabaseConfigured, isOnline })
 
     const exists = types.some(t => t.name === name)
     if (exists) {
@@ -211,18 +342,24 @@ function App() {
     setNewTypeName('')
     setNewTypeColor('#667eea')
 
-    if (supabaseConfigured) {
+    if (supabaseConfigured && isOnline) {
       try {
         console.log('发送到 Supabase...')
         await todoAPI.addType(newType)
       } catch (error) {
-        console.error('添加类型到 Supabase 失败:', error)
+        console.error('添加类型到 Supabase 失败，加入离线队列:', error)
+        addToOfflineQueue({ type: 'addType', data: newType })
+        setPendingSyncCount(getOfflineQueue().length)
       }
+    } else if (supabaseConfigured) {
+      console.log('离线，添加到离线队列')
+      addToOfflineQueue({ type: 'addType', data: newType })
+      setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const deleteType = async (id) => {
-    console.log('删除类型:', id)
+    console.log('删除类型:', id, 'supabaseConfigured:', supabaseConfigured, 'isOnline:', isOnline)
 
     const isDefaultType = DEFAULT_TYPES.some(t => String(t.id) === String(id))
     if (isDefaultType) {
@@ -233,25 +370,25 @@ function App() {
 
     setTypes(types.filter(t => String(t.id) !== String(id)))
 
-    if (supabaseConfigured) {
+    if (supabaseConfigured && isOnline) {
       try {
         console.log('从 Supabase 删除...')
         await todoAPI.deleteType(id)
       } catch (error) {
-        console.error('从 Supabase 删除类型失败:', error)
+        console.error('从 Supabase 删除类型失败，加入离线队列:', error)
+        addToOfflineQueue({ type: 'deleteType', data: { id } })
+        setPendingSyncCount(getOfflineQueue().length)
       }
+    } else if (supabaseConfigured) {
+      console.log('离线，添加到离线队列')
+      addToOfflineQueue({ type: 'deleteType', data: { id } })
+      setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const getTypeColor = (typeId) => {
     if (!typeId) return '#e2e8f0'
-    console.log('查找颜色 - typeId:', typeId, 'types:', types)
-    const type = types.find(t => {
-      const match = String(t.id) === String(typeId)
-      console.log('比较:', t.id, typeId, match)
-      return match
-    })
-    console.log('找到的类型:', type)
+    const type = types.find(t => String(t.id) === String(typeId))
     return type ? type.color : '#e2e8f0'
   }
 
@@ -272,18 +409,33 @@ function App() {
   }
 
   const getSyncStatusText = () => {
+    let statusText = ''
     switch (syncStatus) {
       case 'connecting':
-        return '🔄 正在连接...'
+        statusText = '🔄 正在连接...'
+        break
       case 'connected':
-        return '🔄 已连接'
+        statusText = '🔄 已连接'
+        break
       case 'synced':
-        return '✅ 实时同步中'
+        statusText = '✅ 实时同步中'
+        break
       case 'error':
-        return '⚠️ 离线模式'
+        statusText = '⚠️ 离线模式'
+        break
       default:
-        return ''
+        statusText = ''
     }
+    
+    if (pendingSyncCount > 0) {
+      statusText += ` (${pendingSyncCount} 个待同步)`
+    }
+    
+    if (!isOnline) {
+      statusText = '📵 离线模式' + (pendingSyncCount > 0 ? ` (${pendingSyncCount} 个待同步)` : '')
+    }
+    
+    return statusText
   }
 
   return (
@@ -293,7 +445,7 @@ function App() {
           <h1 className="title">Todo Together</h1>
           <p className="subtitle">双人共享待办清单</p>
           <div className="sync-status">
-            <span className={syncStatus === 'error' ? 'sync-error' : ''}>
+            <span className={!isOnline ? 'sync-error' : ''}>
               {getSyncStatusText()}
             </span>
           </div>
@@ -337,18 +489,12 @@ function App() {
             <select
               className="type-select"
               value={selectedTypeId || ''}
-              onChange={(e) => {
-                console.log('类型选择改变:', e.target.value, '当前 types:', types)
-                setSelectedTypeId(e.target.value || null)
-              }}
+              onChange={(e) => setSelectedTypeId(e.target.value || null)}
             >
               <option value="">无类型</option>
-              {types.map(type => {
-                console.log('渲染类型选项:', type)
-                return (
-                  <option key={type.id} value={type.id}>{type.name}</option>
-                )
-              })}
+              {types.map(type => (
+                <option key={type.id} value={type.id}>{type.name}</option>
+              ))}
             </select>
             <button type="submit" className="add-btn">添加</button>
           </form>
@@ -392,6 +538,7 @@ function App() {
                     <button
                       className="type-delete-btn"
                       onClick={() => deleteType(type.id)}
+                      disabled={DEFAULT_TYPES.some(t => String(t.id) === String(type.id))}
                     >
                       🗑️
                     </button>
@@ -409,9 +556,7 @@ function App() {
               </div>
             ) : (
               <>
-                {[...todos].filter(t => !t.completed).map(todo => {
-                  console.log('渲染待办 todo:', todo)
-                  return (
+                {[...todos].filter(t => !t.completed).map(todo => (
                   <div
                     key={todo.id}
                     className={`todo-item ${todo.completed ? 'completed' : ''}`}
@@ -457,18 +602,15 @@ function App() {
                     🗑️
                   </button>
                 </div>
-                )
-              })}
+                ))}
 
-              {todos.filter(t => !t.completed).length > 0 && todos.filter(t => t.completed).length > 0 && (
-                <div className="section-divider">
-                  <span className="divider-text">已完成</span>
-                </div>
-              )}
+                {todos.filter(t => !t.completed).length > 0 && todos.filter(t => t.completed).length > 0 && (
+                  <div className="section-divider">
+                    <span className="divider-text">已完成</span>
+                  </div>
+                )}
 
-              {[...todos].filter(t => t.completed).map(todo => {
-                console.log('渲染已完成 todo:', todo)
-                return (
+                {[...todos].filter(t => t.completed).map(todo => (
                   <div
                     key={todo.id}
                     className={`todo-item ${todo.completed ? 'completed' : ''}`}
@@ -514,8 +656,7 @@ function App() {
                     🗑️
                   </button>
                 </div>
-                )
-              })}
+                ))}
               </>
             )}
           </div>
