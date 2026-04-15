@@ -3,14 +3,14 @@ import './App.css'
 import { supabase, todoAPI } from './supabase'
 
 const USERS = {
-  user1: { id: 'user1', name: '用户 A', color: '#667eea' },
-  user2: { id: 'user2', name: '用户 B', color: '#f5576c' }
+  user1: { id: 'user1', name: '用户 A', color: '#4B5ED7' },
+  user2: { id: 'user2', name: '用户 B', color: '#D7634B' }
 }
 
 const DEFAULT_TYPES = [
-  { id: 1, name: '工作', color: '#667eea' },
-  { id: 2, name: '生活', color: '#10b981' },
-  { id: 3, name: '学习', color: '#f59e0b' }
+  { id: 1, name: '工作', color: '#4B5ED7' },
+  { id: 2, name: '生活', color: '#10B981' },
+  { id: 3, name: '学习', color: '#F59E0B' }
 ]
 
 const getOfflineQueue = () => {
@@ -65,15 +65,13 @@ function App() {
   const [supabaseConfigured, setSupabaseConfigured] = useState(false)
   const [showTypeManager, setShowTypeManager] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
-  const [newTypeColor, setNewTypeColor] = useState('#667eea')
+  const [newTypeColor, setNewTypeColor] = useState('#4B5ED7')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [pendingSyncCount, setPendingSyncCount] = useState(getOfflineQueue().length)
   const [isSyncing, setIsSyncing] = useState(false)
 
   const refreshData = async () => {
     try {
-      console.log('刷新数据...')
-      
       const todosData = await todoAPI.getTodos()
       const typesData = await todoAPI.getTypes()
 
@@ -92,16 +90,13 @@ function App() {
       
       setSupabaseConfigured(true)
       setSyncStatus('synced')
-      console.log('数据刷新成功')
       return true
     } catch (error) {
-      console.error('刷新数据失败:', error)
       return false
     }
   }
 
   const fallBackToLocal = () => {
-    console.log('切换到本地存储模式')
     setSupabaseConfigured(false)
     setSyncStatus('error')
     const savedTodos = localStorage.getItem('todotogether-todos')
@@ -122,7 +117,6 @@ function App() {
       return
     }
 
-    console.log('开始同步离线操作，共', queue.length, '个')
     setIsSyncing(true)
     setSyncStatus('synced')
 
@@ -131,8 +125,6 @@ function App() {
 
     for (const operation of queue) {
       try {
-        console.log('同步操作:', operation)
-        
         switch (operation.type) {
           case 'addTodo':
             await todoAPI.addTodo(operation.data)
@@ -154,7 +146,6 @@ function App() {
         removeFromOfflineQueue(operation.id)
         successCount++
       } catch (error) {
-        console.error('同步操作失败:', operation, error)
         failedOperations.push(operation)
       }
     }
@@ -167,7 +158,6 @@ function App() {
     setIsSyncing(false)
     
     if (successCount > 0) {
-      console.log('同步完成，成功:', successCount, '失败:', failedOperations.length)
       await refreshData()
     }
   }
@@ -186,7 +176,6 @@ function App() {
     }
 
     const handleOnline = () => {
-      console.log('网络已连接')
       setIsOnline(true)
       if (supabaseConfigured) {
         syncOfflineOperations()
@@ -194,7 +183,6 @@ function App() {
     }
 
     const handleOffline = () => {
-      console.log('网络已断开')
       setIsOnline(false)
     }
 
@@ -237,9 +225,6 @@ function App() {
     e.preventDefault()
     if (!inputValue.trim()) return
 
-    console.log('添加待办 - selectedTypeId:', selectedTypeId, '类型:', typeof selectedTypeId)
-    console.log('添加待办:', { text: inputValue.trim(), typeId: selectedTypeId, supabaseConfigured, isOnline })
-
     const newTodo = {
       id: Date.now(),
       text: inputValue.trim(),
@@ -257,62 +242,46 @@ function App() {
 
     if (supabaseConfigured && isOnline) {
       try {
-        console.log('发送到 Supabase...')
-        const result = await todoAPI.addTodo(newTodo)
-        console.log('Supabase 添加结果:', result)
+        await todoAPI.addTodo(newTodo)
       } catch (error) {
-        console.error('添加到 Supabase 失败，加入离线队列:', error)
         addToOfflineQueue({ type: 'addTodo', data: newTodo })
         setPendingSyncCount(getOfflineQueue().length)
       }
     } else if (supabaseConfigured) {
-      console.log('离线，添加到离线队列')
       addToOfflineQueue({ type: 'addTodo', data: newTodo })
       setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const toggleTodo = async (id, currentCompleted) => {
-    console.log('切换任务 - id:', id, '当前状态:', currentCompleted, 'supabaseConfigured:', supabaseConfigured, 'isOnline:', isOnline)
-
     setTodos(todos.map(todo =>
       todo.id === id ? { ...todo, completed: !currentCompleted } : todo
     ))
 
     if (supabaseConfigured && isOnline) {
       try {
-        console.log('发送到 Supabase...')
-        const result = await todoAPI.toggleTodo(id, !currentCompleted)
-        console.log('Supabase 切换结果:', result)
+        await todoAPI.toggleTodo(id, !currentCompleted)
       } catch (error) {
-        console.error('切换到 Supabase 失败，加入离线队列:', error)
         addToOfflineQueue({ type: 'toggleTodo', data: { id, completed: !currentCompleted } })
         setPendingSyncCount(getOfflineQueue().length)
       }
     } else if (supabaseConfigured) {
-      console.log('离线，添加到离线队列')
       addToOfflineQueue({ type: 'toggleTodo', data: { id, completed: !currentCompleted } })
       setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const deleteTodo = async (id) => {
-    console.log('删除任务 - id:', id, 'supabaseConfigured:', supabaseConfigured, 'isOnline:', isOnline)
-
     setTodos(todos.filter(todo => todo.id !== id))
 
     if (supabaseConfigured && isOnline) {
       try {
-        console.log('发送到 Supabase...')
-        const result = await todoAPI.deleteTodo(id)
-        console.log('Supabase 删除结果:', result)
+        await todoAPI.deleteTodo(id)
       } catch (error) {
-        console.error('删除到 Supabase 失败，加入离线队列:', error)
         addToOfflineQueue({ type: 'deleteTodo', data: { id } })
         setPendingSyncCount(getOfflineQueue().length)
       }
     } else if (supabaseConfigured) {
-      console.log('离线，添加到离线队列')
       addToOfflineQueue({ type: 'deleteTodo', data: { id } })
       setPendingSyncCount(getOfflineQueue().length)
     }
@@ -323,11 +292,8 @@ function App() {
     if (!newTypeName.trim()) return
 
     const name = newTypeName.trim()
-    console.log('添加类型:', { name, color: newTypeColor, supabaseConfigured, isOnline })
-
     const exists = types.some(t => t.name === name)
     if (exists) {
-      console.log('类型已存在，跳过')
       setNewTypeName('')
       return
     }
@@ -340,30 +306,24 @@ function App() {
 
     setTypes([...types, newType])
     setNewTypeName('')
-    setNewTypeColor('#667eea')
+    setNewTypeColor('#4B5ED7')
 
     if (supabaseConfigured && isOnline) {
       try {
-        console.log('发送到 Supabase...')
         await todoAPI.addType(newType)
       } catch (error) {
-        console.error('添加类型到 Supabase 失败，加入离线队列:', error)
         addToOfflineQueue({ type: 'addType', data: newType })
         setPendingSyncCount(getOfflineQueue().length)
       }
     } else if (supabaseConfigured) {
-      console.log('离线，添加到离线队列')
       addToOfflineQueue({ type: 'addType', data: newType })
       setPendingSyncCount(getOfflineQueue().length)
     }
   }
 
   const deleteType = async (id) => {
-    console.log('删除类型:', id, 'supabaseConfigured:', supabaseConfigured, 'isOnline:', isOnline)
-
     const isDefaultType = DEFAULT_TYPES.some(t => String(t.id) === String(id))
     if (isDefaultType) {
-      console.log('不能删除默认类型')
       alert('默认类型不能删除！')
       return
     }
@@ -372,15 +332,12 @@ function App() {
 
     if (supabaseConfigured && isOnline) {
       try {
-        console.log('从 Supabase 删除...')
         await todoAPI.deleteType(id)
       } catch (error) {
-        console.error('从 Supabase 删除类型失败，加入离线队列:', error)
         addToOfflineQueue({ type: 'deleteType', data: { id } })
         setPendingSyncCount(getOfflineQueue().length)
       }
     } else if (supabaseConfigured) {
-      console.log('离线，添加到离线队列')
       addToOfflineQueue({ type: 'deleteType', data: { id } })
       setPendingSyncCount(getOfflineQueue().length)
     }
@@ -411,28 +368,18 @@ function App() {
   const getSyncStatusText = () => {
     let statusText = ''
     switch (syncStatus) {
-      case 'connecting':
-        statusText = '🔄 正在连接...'
-        break
-      case 'connected':
-        statusText = '🔄 已连接'
-        break
-      case 'synced':
-        statusText = '✅ 实时同步中'
-        break
-      case 'error':
-        statusText = '⚠️ 离线模式'
-        break
-      default:
-        statusText = ''
+      case 'connecting': statusText = '正在连接...'; break
+      case 'synced': statusText = '实时同步中'; break
+      case 'error': statusText = '离线模式'; break
+      default: statusText = ''
     }
     
     if (pendingSyncCount > 0) {
-      statusText += ` (${pendingSyncCount} 个待同步)`
+      statusText += ` (${pendingSyncCount} 待同步)`
     }
     
     if (!isOnline) {
-      statusText = '📵 离线模式' + (pendingSyncCount > 0 ? ` (${pendingSyncCount} 个待同步)` : '')
+      statusText = '离线模式' + (pendingSyncCount > 0 ? ` (${pendingSyncCount} 待同步)` : '')
     }
     
     return statusText
@@ -443,38 +390,29 @@ function App() {
       <div className="container">
         <div className="header">
           <h1 className="title">Todo Together</h1>
-          <p className="subtitle">双人共享待办清单</p>
+          <p className="subtitle">共享每一刻，同步每一事</p>
           <div className="sync-status">
             <span className={!isOnline ? 'sync-error' : ''}>
-              {getSyncStatusText()}
+              {isOnline ? '● ' : '○ '}{getSyncStatusText()}
             </span>
           </div>
         </div>
 
-        {!supabaseConfigured && (
-          <div className="config-notice">
-            <p>⚠️ 请在 <code>src/supabase.js</code> 中配置你的 Supabase 项目以启用实时同步</p>
-            <p className="config-hint">当前使用本地存储模式</p>
-          </div>
-        )}
-
         <div className="user-section">
-          <div className="user-switcher">
-            <button
-              className={`user-btn user1 ${currentUser === 'user1' ? 'active' : ''}`}
-              onClick={() => setCurrentUser('user1')}
-            >
-              <span className="user-name">{USERS.user1.name}</span>
-              <span className="task-count">{getUserTodos('user1').length} 个待办</span>
-            </button>
-            <button
-              className={`user-btn user2 ${currentUser === 'user2' ? 'active' : ''}`}
-              onClick={() => setCurrentUser('user2')}
-            >
-              <span className="user-name">{USERS.user2.name}</span>
-              <span className="task-count">{getUserTodos('user2').length} 个待办</span>
-            </button>
-          </div>
+          <button
+            className={`user-btn user1 ${currentUser === 'user1' ? 'active' : ''}`}
+            onClick={() => setCurrentUser('user1')}
+          >
+            <span className="user-name">{USERS.user1.name}</span>
+            <span className="task-count">{getUserTodos('user1').length} 个待办</span>
+          </button>
+          <button
+            className={`user-btn user2 ${currentUser === 'user2' ? 'active' : ''}`}
+            onClick={() => setCurrentUser('user2')}
+          >
+            <span className="user-name">{USERS.user2.name}</span>
+            <span className="task-count">{getUserTodos('user2').length} 个待办</span>
+          </button>
         </div>
 
         <div className="todo-section">
@@ -482,7 +420,7 @@ function App() {
             <input
               type="text"
               className="add-input"
-              placeholder={`${USERS[currentUser].name}，添加新的待办事项...`}
+              placeholder={`在这里添加任务...`}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
             />
@@ -491,7 +429,7 @@ function App() {
               value={selectedTypeId || ''}
               onChange={(e) => setSelectedTypeId(e.target.value || null)}
             >
-              <option value="">无类型</option>
+              <option value="">选择类型</option>
               {types.map(type => (
                 <option key={type.id} value={type.id}>{type.name}</option>
               ))}
@@ -504,18 +442,18 @@ function App() {
               className="type-manager-btn"
               onClick={() => setShowTypeManager(!showTypeManager)}
             >
-              {showTypeManager ? '✕ 关闭类型管理' : '⚙️ 管理类型'}
+              {showTypeManager ? '✕ 关闭管理' : '⚙️ 任务类型'}
             </button>
           </div>
 
           {showTypeManager && (
             <div className="type-manager">
-              <h3 className="type-manager-title">类型管理</h3>
+              <h3 className="type-manager-title">管理类型</h3>
               <form className="type-add-form" onSubmit={addType}>
                 <input
                   type="text"
                   className="type-name-input"
-                  placeholder="类型名称"
+                  placeholder="新类型名称"
                   value={newTypeName}
                   onChange={(e) => setNewTypeName(e.target.value)}
                 />
@@ -525,7 +463,7 @@ function App() {
                   value={newTypeColor}
                   onChange={(e) => setNewTypeColor(e.target.value)}
                 />
-                <button type="submit" className="type-add-btn">添加</button>
+                <button type="submit" className="type-add-btn">创建</button>
               </form>
               <div className="types-list">
                 {types.map(type => (
@@ -540,7 +478,7 @@ function App() {
                       onClick={() => deleteType(type.id)}
                       disabled={DEFAULT_TYPES.some(t => String(t.id) === String(type.id))}
                     >
-                      🗑️
+                      ✕
                     </button>
                   </div>
                 ))}
@@ -551,57 +489,45 @@ function App() {
           <div className="todo-list">
             {todos.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-icon">✨</div>
-                <p className="empty-text">还没有待办事项，来添加第一个吧！</p>
+                <div className="empty-icon">🛋️</div>
+                <p className="empty-text">享受当下，目前没有任何待办事项</p>
               </div>
             ) : (
               <>
                 {[...todos].filter(t => !t.completed).map(todo => (
                   <div
                     key={todo.id}
-                    className={`todo-item ${todo.completed ? 'completed' : ''}`}
-                    style={{
-                      borderLeft: `4px solid ${getTypeColor(todo.type_id || todo.typeId)}`
-                    }}
+                    className="todo-item"
+                    style={{ borderLeft: `6px solid ${getTypeColor(todo.type_id || todo.typeId)}` }}
                   >
-                  <button
-                    className={`checkbox ${todo.completed ? 'checked' : ''}`}
-                    onClick={() => toggleTodo(todo.id, todo.completed)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="checkmark-svg">
-                      <path
-                        d="M5 12l5 5L20 7"
-                        stroke="white"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                  <div className="todo-content">
-                    <span className="todo-text">{todo.text}</span>
-                    {(todo.type_id || todo.typeId) && (
-                      <span
-                        className="todo-type-tag"
-                        style={{ backgroundColor: getTypeColor(todo.type_id || todo.typeId) }}
-                      >
-                        {getTypeName(todo.type_id || todo.typeId)}
+                    <button
+                      className={`checkbox ${todo.completed ? 'checked' : ''}`}
+                      onClick={() => toggleTodo(todo.id, todo.completed)}
+                    >
+                      {todo.completed && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                          <path d="M5 12l5 5L20 7" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </button>
+                    <div className="todo-content">
+                      <span className="todo-text">{todo.text}</span>
+                      {(todo.type_id || todo.typeId) && (
+                        <span
+                          className="todo-type-tag"
+                          style={{ backgroundColor: getTypeColor(todo.type_id || todo.typeId) }}
+                        >
+                          {getTypeName(todo.type_id || todo.typeId)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="todo-meta">
+                      <span className={`todo-owner ${todo.owner}`}>
+                        {USERS[todo.owner].name}
                       </span>
-                    )}
+                      <button className="delete-btn" onClick={() => deleteTodo(todo.id)}>✕</button>
+                    </div>
                   </div>
-                  <div className="todo-meta">
-                    <span className={`todo-owner ${todo.owner}`}>
-                      {USERS[todo.owner].name}
-                    </span>
-                  </div>
-                  <button
-                    className="delete-btn"
-                    onClick={() => deleteTodo(todo.id)}
-                    title="删除"
-                  >
-                    🗑️
-                  </button>
-                </div>
                 ))}
 
                 {todos.filter(t => !t.completed).length > 0 && todos.filter(t => t.completed).length > 0 && (
@@ -613,68 +539,54 @@ function App() {
                 {[...todos].filter(t => t.completed).map(todo => (
                   <div
                     key={todo.id}
-                    className={`todo-item ${todo.completed ? 'completed' : ''}`}
-                    style={{
-                      borderLeft: `4px solid ${getTypeColor(todo.type_id || todo.typeId)}`
-                    }}
+                    className="todo-item completed"
+                    style={{ borderLeft: `6px solid ${getTypeColor(todo.type_id || todo.typeId)}` }}
                   >
-                  <button
-                    className={`checkbox ${todo.completed ? 'checked' : ''}`}
-                    onClick={() => toggleTodo(todo.id, todo.completed)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="checkmark-svg">
-                      <path
-                        d="M5 12l5 5L20 7"
-                        stroke="white"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                  <div className="todo-content">
-                    <span className="todo-text">{todo.text}</span>
-                    {(todo.type_id || todo.typeId) && (
-                      <span
-                        className="todo-type-tag"
-                        style={{ backgroundColor: getTypeColor(todo.type_id || todo.typeId) }}
-                      >
-                        {getTypeName(todo.type_id || todo.typeId)}
+                    <button
+                      className={`checkbox ${todo.completed ? 'checked' : ''}`}
+                      onClick={() => toggleTodo(todo.id, todo.completed)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <path d="M5 12l5 5L20 7" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                    <div className="todo-content">
+                      <span className="todo-text">{todo.text}</span>
+                      {(todo.type_id || todo.typeId) && (
+                        <span
+                          className="todo-type-tag"
+                          style={{ backgroundColor: getTypeColor(todo.type_id || todo.typeId) }}
+                        >
+                          {getTypeName(todo.type_id || todo.typeId)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="todo-meta">
+                      <span className={`todo-owner ${todo.owner}`}>
+                        {USERS[todo.owner].name}
                       </span>
-                    )}
+                      <button className="delete-btn" onClick={() => deleteTodo(todo.id)}>✕</button>
+                    </div>
                   </div>
-                  <div className="todo-meta">
-                    <span className={`todo-owner ${todo.owner}`}>
-                      {USERS[todo.owner].name}
-                    </span>
-                  </div>
-                  <button
-                    className="delete-btn"
-                    onClick={() => deleteTodo(todo.id)}
-                    title="删除"
-                  >
-                    🗑️
-                  </button>
-                </div>
                 ))}
               </>
             )}
           </div>
         </div>
+      </div>
 
-        <div className="stats">
-          <div className="stat">
-            <div className="stat-value">{stats.total}</div>
-            <div className="stat-label">总计</div>
-          </div>
-          <div className="stat">
-            <div className="stat-value">{stats.completed}</div>
-            <div className="stat-label">已完成</div>
-          </div>
-          <div className="stat">
-            <div className="stat-value">{stats.pending}</div>
-            <div className="stat-label">待完成</div>
-          </div>
+      <div className="stats">
+        <div className="stat">
+          <div className="stat-value">{stats.total}</div>
+          <div className="stat-label">任务总数</div>
+        </div>
+        <div className="stat">
+          <div className="stat-value">{stats.completed}</div>
+          <div className="stat-label">已达成</div>
+        </div>
+        <div className="stat">
+          <div className="stat-value">{stats.pending}</div>
+          <div className="stat-label">进行中</div>
         </div>
       </div>
     </div>
