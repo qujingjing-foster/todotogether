@@ -1,57 +1,41 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://ljttjzzssnpikhduakoy.supabase.co'
+const supabaseUrl = 'https://ltjttzszsnphkhduakoy.supabase.co'
 const supabaseAnonKey = 'sb_publishable_jMzxfh6T56spKiYZy0lUIA_YOJRhVFq'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export const todoAPI = {
-  subscribeTodos: (callback) => {
-    const channel = supabase
-      .channel('todos-channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'todos'
-        },
-        async () => {
-          const { data } = await supabase
-            .from('todos')
-            .select('*')
-            .order('created_at', { ascending: false })
-          callback(data || [])
-        }
-      )
-      .subscribe()
-
-    supabase
+  getTodos: async () => {
+    const { data } = await supabase
       .from('todos')
       .select('*')
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        callback(data || [])
-      })
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return data || []
   },
 
   addTodo: async (todo) => {
-    return await supabase.from('todos').insert([
-      {
-        text: todo.text,
-        completed: false,
-        owner: todo.owner,
-        type_id: todo.typeId || null,
-        created_at: todo.createdAt
+    console.log('添加 todo:', todo)
+    const insertData = {
+      text: todo.text,
+      completed: false,
+      owner: todo.owner,
+      created_at: todo.createdAt
+    }
+    if (todo.typeId && todo.typeId !== '') {
+      const typeIdNum = Number(todo.typeId)
+      if (!isNaN(typeIdNum)) {
+        insertData.type_id = typeIdNum
       }
-    ])
+    }
+    console.log('插入数据:', insertData)
+    const result = await supabase.from('todos').insert([insertData])
+    console.log('Supabase 完整结果:', result)
+    return result
   },
 
   toggleTodo: async (id, completed) => {
+    console.log('切换 todo:', id, completed)
     return await supabase
       .from('todos')
       .update({ completed })
@@ -59,46 +43,23 @@ export const todoAPI = {
   },
 
   deleteTodo: async (id) => {
+    console.log('删除 todo:', id)
     return await supabase
       .from('todos')
       .delete()
       .eq('id', id)
   },
 
-  subscribeTypes: (callback) => {
-    const channel = supabase
-      .channel('types-channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'todo_types'
-        },
-        async () => {
-          const { data } = await supabase
-            .from('todo_types')
-            .select('*')
-            .order('created_at', { ascending: true })
-          callback(data || [])
-        }
-      )
-      .subscribe()
-
-    supabase
+  getTypes: async () => {
+    const { data } = await supabase
       .from('todo_types')
       .select('*')
       .order('created_at', { ascending: true })
-      .then(({ data }) => {
-        callback(data || [])
-      })
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return data || []
   },
 
   addType: async (type) => {
+    console.log('添加 type:', type)
     return await supabase.from('todo_types').insert([
       {
         name: type.name,
@@ -109,6 +70,7 @@ export const todoAPI = {
   },
 
   deleteType: async (id) => {
+    console.log('删除 type:', id)
     return await supabase
       .from('todo_types')
       .delete()

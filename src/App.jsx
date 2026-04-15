@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import { todoAPI } from './supabase'
+import { supabase, todoAPI } from './supabase'
 
 const USERS = {
   user1: { id: 'user1', name: '用户 A', color: '#667eea' },
@@ -8,15 +8,32 @@ const USERS = {
 }
 
 const DEFAULT_TYPES = [
-  { id: 'default', name: '工作', color: '#667eea' },
-  { id: 'default2', name: '生活', color: '#10b981' },
-  { id: 'default3', name: '学习', color: '#f59e0b' }
+  { id: 1, name: '工作', color: '#667eea' },
+  { id: 2, name: '生活', color: '#10b981' },
+  { id: 3, name: '学习', color: '#f59e0b' }
 ]
 
 function App() {
   const [currentUser, setCurrentUser] = useState('user1')
-  const [todos, setTodos] = useState([])
-  const [types, setTypes] = useState([])
+  const [todos, setTodos] = useState(() => {
+    const savedTodos = localStorage.getItem('todotogether-todos')
+    return savedTodos ? JSON.parse(savedTodos) : []
+  })
+  const [types, setTypes] = useState(() => {
+    const savedTypes = localStorage.getItem('todotogether-types')
+    if (savedTypes) {
+      const parsed = JSON.parse(savedTypes)
+      const merged = [...DEFAULT_TYPES]
+      parsed.forEach(t => {
+        const exists = merged.some(m => m.id === t.id || m.name === t.name)
+        if (!exists) {
+          merged.push(t)
+        }
+      })
+      return merged
+    }
+    return DEFAULT_TYPES
+  })
   const [inputValue, setInputValue] = useState('')
   const [selectedTypeId, setSelectedTypeId] = useState(null)
   const [syncStatus, setSyncStatus] = useState('connecting')
@@ -25,55 +42,74 @@ function App() {
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeColor, setNewTypeColor] = useState('#667eea')
 
+  const refreshData = async () => {
+    try {
+      console.log('刷新数据...')
+      
+      const todosData = await todoAPI.getTodos()
+      const typesData = await todoAPI.getTypes()
+
+      setTodos(todosData)
+      
+      const mergedTypes = [...DEFAULT_TYPES]
+      if (typesData && typesData.length > 0) {
+        typesData.forEach(dbType => {
+          const exists = mergedTypes.some(t => t.id === dbType.id || t.name === dbType.name)
+          if (!exists) {
+            mergedTypes.push(dbType)
+          }
+        })
+      }
+      setTypes(mergedTypes)
+      
+      setSupabaseConfigured(true)
+      setSyncStatus('synced')
+      console.log('数据刷新成功')
+      return true
+    } catch (error) {
+      console.error('刷新数据失败:', error)
+      return false
+    }
+  }
+
+  const fallBackToLocal = () => {
+    console.log('切换到本地存储模式')
+    setSupabaseConfigured(false)
+    setSyncStatus('error')
+    const savedTodos = localStorage.getItem('todotogether-todos')
+    const savedTypes = localStorage.getItem('todotogether-types')
+    if (savedTodos) {
+      setTodos(JSON.parse(savedTodos))
+    }
+    if (savedTypes) {
+      setTypes(JSON.parse(savedTypes))
+    } else {
+      setTypes(DEFAULT_TYPES)
+    }
+  }
+
   useEffect(() => {
-    let timeoutId
-    let unsubscribeTodos
-    let unsubscribeTypes
+    let isMounted = true
+    let pollInterval = null
 
-    const initSupabase = () => {
-      try {
-        unsubscribeTodos = todoAPI.subscribeTodos((newTodos) => {
-          setTodos(newTodos)
-          setSyncStatus('synced')
-          setSupabaseConfigured(true)
-          if (timeoutId) clearTimeout(timeoutId)
-        })
-
-        unsubscribeTypes = todoAPI.subscribeTypes((newTypes) => {
-          setTypes(newTypes.length > 0 ? newTypes : DEFAULT_TYPES.map((t, i) => ({ ...t, id: i })))
-        })
-
-        setSyncStatus('connected')
-      } catch (error) {
-        console.error('Supabase连接错误:', error)
+    const init = async () => {
+      const success = await refreshData()
+      if (!success && isMounted) {
         fallBackToLocal()
       }
     }
 
-    const fallBackToLocal = () => {
-      setSupabaseConfigured(false)
-      setSyncStatus('error')
-      const savedTodos = localStorage.getItem('todotogether-todos')
-      const savedTypes = localStorage.getItem('todotogether-types')
-      setTodos(savedTodos ? JSON.parse(savedTodos) : [])
-      setTypes(savedTypes ? JSON.parse(savedTypes) : DEFAULT_TYPES)
-    }
-
-    timeoutId = setTimeout(() => {
-      if (!supabaseConfigured) {
-        console.log('Supabase连接超时，使用本地存储')
-        if (unsubscribeTodos) unsubscribeTodos()
-        if (unsubscribeTypes) unsubscribeTypes()
-        fallBackToLocal()
+    init()
+    
+    pollInterval = setInterval(async () => {
+      if (supabaseConfigured) {
+        await refreshData()
       }
-    }, 3000)
-
-    initSupabase()
+    }, 5000)
 
     return () => {
-      if (timeoutId) clearTimeout(timeoutId)
-      if (unsubscribeTodos) unsubscribeTodos()
-      if (unsubscribeTypes) unsubscribeTypes()
+      isMounted = false
+      if (pollInterval) clearInterval(pollInterval)
     }
   }, [])
 
@@ -84,77 +120,144 @@ function App() {
     }
   }, [todos, types, supabaseConfigured])
 
-  const addTodo = (e) => {
+  const addTodo = async (e) => {
     e.preventDefault()
     if (!inputValue.trim()) return
 
+    console.log('添加待办 - selectedTypeId:', selectedTypeId, '类型:', typeof selectedTypeId)
+    console.log('添加待办:', { text: inputValue.trim(), typeId: selectedTypeId, supabaseConfigured })
+
     const newTodo = {
+      id: Date.now(),
       text: inputValue.trim(),
+      completed: false,
       owner: currentUser,
+      type_id: selectedTypeId,
       typeId: selectedTypeId,
+      created_at: new Date().toISOString(),
       createdAt: new Date().toISOString()
     }
 
-    if (supabaseConfigured) {
-      todoAPI.addTodo(newTodo)
-    } else {
-      setTodos([{ ...newTodo, id: Date.now() }, ...todos])
-    }
+    setTodos(prev => [newTodo, ...prev])
     setInputValue('')
     setSelectedTypeId(null)
-  }
 
-  const toggleTodo = (id, currentCompleted) => {
     if (supabaseConfigured) {
-      todoAPI.toggleTodo(id, !currentCompleted)
-    } else {
-      setTodos(todos.map(todo =>
-        todo.id === id ? { ...todo, completed: !todo.completed } : todo
-      ))
+      try {
+        console.log('发送到 Supabase...')
+        const result = await todoAPI.addTodo(newTodo)
+        console.log('Supabase 添加结果:', result)
+      } catch (error) {
+        console.error('添加到 Supabase 失败:', error)
+      }
     }
   }
 
-  const deleteTodo = (id) => {
+  const toggleTodo = async (id, currentCompleted) => {
+    console.log('切换任务 - id:', id, '当前状态:', currentCompleted, 'supabaseConfigured:', supabaseConfigured)
+
+    setTodos(todos.map(todo =>
+      todo.id === id ? { ...todo, completed: !currentCompleted } : todo
+    ))
+
     if (supabaseConfigured) {
-      todoAPI.deleteTodo(id)
-    } else {
-      setTodos(todos.filter(todo => todo.id !== id))
+      try {
+        console.log('发送到 Supabase...')
+        const result = await todoAPI.toggleTodo(id, !currentCompleted)
+        console.log('Supabase 切换结果:', result)
+      } catch (error) {
+        console.error('切换到 Supabase 失败:', error)
+      }
     }
   }
 
-  const addType = (e) => {
+  const deleteTodo = async (id) => {
+    console.log('删除任务 - id:', id, 'supabaseConfigured:', supabaseConfigured)
+
+    setTodos(todos.filter(todo => todo.id !== id))
+
+    if (supabaseConfigured) {
+      try {
+        console.log('发送到 Supabase...')
+        const result = await todoAPI.deleteTodo(id)
+        console.log('Supabase 删除结果:', result)
+      } catch (error) {
+        console.error('删除到 Supabase 失败:', error)
+      }
+    }
+  }
+
+  const addType = async (e) => {
     e.preventDefault()
     if (!newTypeName.trim()) return
 
+    const name = newTypeName.trim()
+    console.log('添加类型:', { name, color: newTypeColor })
+
+    const exists = types.some(t => t.name === name)
+    if (exists) {
+      console.log('类型已存在，跳过')
+      setNewTypeName('')
+      return
+    }
+
     const newType = {
-      name: newTypeName.trim(),
+      id: Date.now(),
+      name,
       color: newTypeColor
     }
 
-    if (supabaseConfigured) {
-      todoAPI.addType(newType)
-    } else {
-      setTypes([...types, { ...newType, id: Date.now() }])
-    }
+    setTypes([...types, newType])
     setNewTypeName('')
     setNewTypeColor('#667eea')
+
+    if (supabaseConfigured) {
+      try {
+        console.log('发送到 Supabase...')
+        await todoAPI.addType(newType)
+      } catch (error) {
+        console.error('添加类型到 Supabase 失败:', error)
+      }
+    }
   }
 
-  const deleteType = (id) => {
+  const deleteType = async (id) => {
+    console.log('删除类型:', id)
+
+    const isDefaultType = DEFAULT_TYPES.some(t => String(t.id) === String(id))
+    if (isDefaultType) {
+      console.log('不能删除默认类型')
+      alert('默认类型不能删除！')
+      return
+    }
+
+    setTypes(types.filter(t => String(t.id) !== String(id)))
+
     if (supabaseConfigured) {
-      todoAPI.deleteType(id)
-    } else {
-      setTypes(types.filter(t => t.id !== id))
+      try {
+        console.log('从 Supabase 删除...')
+        await todoAPI.deleteType(id)
+      } catch (error) {
+        console.error('从 Supabase 删除类型失败:', error)
+      }
     }
   }
 
   const getTypeColor = (typeId) => {
-    const type = types.find(t => t.id === typeId)
+    if (!typeId) return '#e2e8f0'
+    console.log('查找颜色 - typeId:', typeId, 'types:', types)
+    const type = types.find(t => {
+      const match = String(t.id) === String(typeId)
+      console.log('比较:', t.id, typeId, match)
+      return match
+    })
+    console.log('找到的类型:', type)
     return type ? type.color : '#e2e8f0'
   }
 
   const getTypeName = (typeId) => {
-    const type = types.find(t => t.id === typeId)
+    if (!typeId) return ''
+    const type = types.find(t => String(t.id) === String(typeId))
     return type ? type.name : ''
   }
 
@@ -234,12 +337,18 @@ function App() {
             <select
               className="type-select"
               value={selectedTypeId || ''}
-              onChange={(e) => setSelectedTypeId(e.target.value || null)}
+              onChange={(e) => {
+                console.log('类型选择改变:', e.target.value, '当前 types:', types)
+                setSelectedTypeId(e.target.value || null)
+              }}
             >
               <option value="">无类型</option>
-              {types.map(type => (
-                <option key={type.id} value={type.id}>{type.name}</option>
-              ))}
+              {types.map(type => {
+                console.log('渲染类型选项:', type)
+                return (
+                  <option key={type.id} value={type.id}>{type.name}</option>
+                )
+              })}
             </select>
             <button type="submit" className="add-btn">添加</button>
           </form>
@@ -299,14 +408,17 @@ function App() {
                 <p className="empty-text">还没有待办事项，来添加第一个吧！</p>
               </div>
             ) : (
-              todos.map(todo => (
-                <div
-                  key={todo.id}
-                  className={`todo-item ${todo.completed ? 'completed' : ''}`}
-                  style={{
-                    borderLeft: `4px solid ${getTypeColor(todo.type_id || todo.typeId)}`
-                  }}
-                >
+              <>
+                {[...todos].filter(t => !t.completed).map(todo => {
+                  console.log('渲染待办 todo:', todo)
+                  return (
+                  <div
+                    key={todo.id}
+                    className={`todo-item ${todo.completed ? 'completed' : ''}`}
+                    style={{
+                      borderLeft: `4px solid ${getTypeColor(todo.type_id || todo.typeId)}`
+                    }}
+                  >
                   <button
                     className={`checkbox ${todo.completed ? 'checked' : ''}`}
                     onClick={() => toggleTodo(todo.id, todo.completed)}
@@ -345,7 +457,66 @@ function App() {
                     🗑️
                   </button>
                 </div>
-              ))
+                )
+              })}
+
+              {todos.filter(t => !t.completed).length > 0 && todos.filter(t => t.completed).length > 0 && (
+                <div className="section-divider">
+                  <span className="divider-text">已完成</span>
+                </div>
+              )}
+
+              {[...todos].filter(t => t.completed).map(todo => {
+                console.log('渲染已完成 todo:', todo)
+                return (
+                  <div
+                    key={todo.id}
+                    className={`todo-item ${todo.completed ? 'completed' : ''}`}
+                    style={{
+                      borderLeft: `4px solid ${getTypeColor(todo.type_id || todo.typeId)}`
+                    }}
+                  >
+                  <button
+                    className={`checkbox ${todo.completed ? 'checked' : ''}`}
+                    onClick={() => toggleTodo(todo.id, todo.completed)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="checkmark-svg">
+                      <path
+                        d="M5 12l5 5L20 7"
+                        stroke="white"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <div className="todo-content">
+                    <span className="todo-text">{todo.text}</span>
+                    {(todo.type_id || todo.typeId) && (
+                      <span
+                        className="todo-type-tag"
+                        style={{ backgroundColor: getTypeColor(todo.type_id || todo.typeId) }}
+                      >
+                        {getTypeName(todo.type_id || todo.typeId)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="todo-meta">
+                    <span className={`todo-owner ${todo.owner}`}>
+                      {USERS[todo.owner].name}
+                    </span>
+                  </div>
+                  <button
+                    className="delete-btn"
+                    onClick={() => deleteTodo(todo.id)}
+                    title="删除"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                )
+              })}
+              </>
             )}
           </div>
         </div>

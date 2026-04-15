@@ -16,26 +16,26 @@
 
 .header {
   background: linear-gradient(135deg, var(--primary-1) 0%, var(--primary-2) 100%);
-  padding: 32px 24px;
+  padding: 20px 24px;
   text-align: center;
   color: var(--white);
 }
 
 .title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   letter-spacing: -0.5px;
 }
 
 .subtitle {
-  font-size: 14px;
+  font-size: 13px;
   opacity: 0.9;
   font-weight: 400;
 }
 
 .user-section {
-  padding: 20px 24px;
+  padding: 16px 24px;
   border-bottom: 1px solid #e2e8f0;
 }
 
@@ -46,18 +46,18 @@
 
 .user-btn {
   flex: 1;
-  padding: 14px 20px;
+  padding: 12px 16px;
   border: 2px solid #e2e8f0;
   background: var(--white);
   border-radius: 12px;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-light);
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .user-btn:hover {
@@ -88,21 +88,21 @@
 }
 
 .todo-section {
-  padding: 24px;
+  padding: 16px 24px;
 }
 
 .add-form {
   display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .add-input {
   flex: 1;
-  padding: 14px 18px;
+  padding: 12px 16px;
   border: 2px solid #e2e8f0;
-  border-radius: 12px;
-  font-size: 15px;
+  border-radius: 10px;
+  font-size: 14px;
   font-family: inherit;
   transition: all 0.3s ease;
   outline: none;
@@ -114,12 +114,12 @@
 }
 
 .add-btn {
-  padding: 14px 28px;
+  padding: 12px 24px;
   border: none;
-  border-radius: 12px;
+  border-radius: 10px;
   background: linear-gradient(135deg, var(--primary-1) 0%, var(--primary-2) 100%);
   color: var(--white);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -137,10 +137,34 @@
 .todo-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 400px;
+  gap: 10px;
+  max-height: 420px;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 0 4px;
+}
+
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
+}
+
+.divider-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .todo-list::-webkit-scrollbar {
@@ -165,10 +189,10 @@
 .todo-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px 14px;
   background: #f7fafc;
-  border-radius: 12px;
+  border-radius: 10px;
   transition: all 0.3s ease;
   animation: slideIn 0.3s ease-out;
 }
@@ -183,9 +207,9 @@
 }
 
 .checkbox {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
   border: 2px solid #cbd5e0;
   border-radius: 50%;
   cursor: pointer;
@@ -216,9 +240,9 @@
 
 .todo-text {
   flex: 1;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-dark);
-  line-height: 1.5;
+  line-height: 1.4;
   transition: all 0.3s ease;
 }
 
@@ -269,24 +293,24 @@
 
 .empty-state {
   text-align: center;
-  padding: 40px 20px;
+  padding: 30px 20px;
   color: var(--text-light);
 }
 
 .empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  font-size: 40px;
+  margin-bottom: 12px;
   opacity: 0.5;
 }
 
 .empty-text {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .stats {
   display: flex;
   justify-content: space-around;
-  padding: 16px 24px;
+  padding: 12px 24px;
   background: #f7fafc;
   border-top: 1px solid #e2e8f0;
 }
@@ -296,7 +320,7 @@
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   background: linear-gradient(135deg, var(--primary-1) 0%, var(--primary-2) 100%);
   -webkit-background-clip: text;
@@ -307,7 +331,7 @@
 .stat-label {
   font-size: 12px;
   color: var(--text-light);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 @media (max-width: 480px) {
