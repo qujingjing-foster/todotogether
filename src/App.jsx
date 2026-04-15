@@ -7,24 +7,40 @@ const USERS = {
   user2: { id: 'user2', name: '用户 B', color: '#f5576c' }
 }
 
+const DEFAULT_TYPES = [
+  { id: 'default', name: '工作', color: '#667eea' },
+  { id: 'default2', name: '生活', color: '#10b981' },
+  { id: 'default3', name: '学习', color: '#f59e0b' }
+]
+
 function App() {
   const [currentUser, setCurrentUser] = useState('user1')
   const [todos, setTodos] = useState([])
+  const [types, setTypes] = useState([])
   const [inputValue, setInputValue] = useState('')
+  const [selectedTypeId, setSelectedTypeId] = useState(null)
   const [syncStatus, setSyncStatus] = useState('connecting')
   const [supabaseConfigured, setSupabaseConfigured] = useState(false)
+  const [showTypeManager, setShowTypeManager] = useState(false)
+  const [newTypeName, setNewTypeName] = useState('')
+  const [newTypeColor, setNewTypeColor] = useState('#667eea')
 
   useEffect(() => {
     let timeoutId
-    let unsubscribe
+    let unsubscribeTodos
+    let unsubscribeTypes
 
     const initSupabase = () => {
       try {
-        unsubscribe = todoAPI.subscribeTodos((newTodos) => {
+        unsubscribeTodos = todoAPI.subscribeTodos((newTodos) => {
           setTodos(newTodos)
           setSyncStatus('synced')
           setSupabaseConfigured(true)
           if (timeoutId) clearTimeout(timeoutId)
+        })
+
+        unsubscribeTypes = todoAPI.subscribeTypes((newTypes) => {
+          setTypes(newTypes.length > 0 ? newTypes : DEFAULT_TYPES.map((t, i) => ({ ...t, id: i })))
         })
 
         setSyncStatus('connected')
@@ -37,14 +53,17 @@ function App() {
     const fallBackToLocal = () => {
       setSupabaseConfigured(false)
       setSyncStatus('error')
-      const saved = localStorage.getItem('todotogether-todos')
-      setTodos(saved ? JSON.parse(saved) : [])
+      const savedTodos = localStorage.getItem('todotogether-todos')
+      const savedTypes = localStorage.getItem('todotogether-types')
+      setTodos(savedTodos ? JSON.parse(savedTodos) : [])
+      setTypes(savedTypes ? JSON.parse(savedTypes) : DEFAULT_TYPES)
     }
 
     timeoutId = setTimeout(() => {
       if (!supabaseConfigured) {
         console.log('Supabase连接超时，使用本地存储')
-        if (unsubscribe) unsubscribe()
+        if (unsubscribeTodos) unsubscribeTodos()
+        if (unsubscribeTypes) unsubscribeTypes()
         fallBackToLocal()
       }
     }, 3000)
@@ -53,15 +72,17 @@ function App() {
 
     return () => {
       if (timeoutId) clearTimeout(timeoutId)
-      if (unsubscribe) unsubscribe()
+      if (unsubscribeTodos) unsubscribeTodos()
+      if (unsubscribeTypes) unsubscribeTypes()
     }
   }, [])
 
   useEffect(() => {
     if (!supabaseConfigured) {
       localStorage.setItem('todotogether-todos', JSON.stringify(todos))
+      localStorage.setItem('todotogether-types', JSON.stringify(types))
     }
-  }, [todos, supabaseConfigured])
+  }, [todos, types, supabaseConfigured])
 
   const addTodo = (e) => {
     e.preventDefault()
@@ -70,6 +91,7 @@ function App() {
     const newTodo = {
       text: inputValue.trim(),
       owner: currentUser,
+      typeId: selectedTypeId,
       createdAt: new Date().toISOString()
     }
 
@@ -79,6 +101,7 @@ function App() {
       setTodos([{ ...newTodo, id: Date.now() }, ...todos])
     }
     setInputValue('')
+    setSelectedTypeId(null)
   }
 
   const toggleTodo = (id, currentCompleted) => {
@@ -97,6 +120,42 @@ function App() {
     } else {
       setTodos(todos.filter(todo => todo.id !== id))
     }
+  }
+
+  const addType = (e) => {
+    e.preventDefault()
+    if (!newTypeName.trim()) return
+
+    const newType = {
+      name: newTypeName.trim(),
+      color: newTypeColor
+    }
+
+    if (supabaseConfigured) {
+      todoAPI.addType(newType)
+    } else {
+      setTypes([...types, { ...newType, id: Date.now() }])
+    }
+    setNewTypeName('')
+    setNewTypeColor('#667eea')
+  }
+
+  const deleteType = (id) => {
+    if (supabaseConfigured) {
+      todoAPI.deleteType(id)
+    } else {
+      setTypes(types.filter(t => t.id !== id))
+    }
+  }
+
+  const getTypeColor = (typeId) => {
+    const type = types.find(t => t.id === typeId)
+    return type ? type.color : '#e2e8f0'
+  }
+
+  const getTypeName = (typeId) => {
+    const type = types.find(t => t.id === typeId)
+    return type ? type.name : ''
   }
 
   const getUserTodos = (userId) => {
@@ -172,8 +231,66 @@ function App() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
             />
+            <select
+              className="type-select"
+              value={selectedTypeId || ''}
+              onChange={(e) => setSelectedTypeId(e.target.value || null)}
+            >
+              <option value="">无类型</option>
+              {types.map(type => (
+                <option key={type.id} value={type.id}>{type.name}</option>
+              ))}
+            </select>
             <button type="submit" className="add-btn">添加</button>
           </form>
+
+          <div className="type-manager-toggle">
+            <button
+              className="type-manager-btn"
+              onClick={() => setShowTypeManager(!showTypeManager)}
+            >
+              {showTypeManager ? '✕ 关闭类型管理' : '⚙️ 管理类型'}
+            </button>
+          </div>
+
+          {showTypeManager && (
+            <div className="type-manager">
+              <h3 className="type-manager-title">类型管理</h3>
+              <form className="type-add-form" onSubmit={addType}>
+                <input
+                  type="text"
+                  className="type-name-input"
+                  placeholder="类型名称"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                />
+                <input
+                  type="color"
+                  className="type-color-input"
+                  value={newTypeColor}
+                  onChange={(e) => setNewTypeColor(e.target.value)}
+                />
+                <button type="submit" className="type-add-btn">添加</button>
+              </form>
+              <div className="types-list">
+                {types.map(type => (
+                  <div key={type.id} className="type-item">
+                    <div
+                      className="type-color-preview"
+                      style={{ backgroundColor: type.color }}
+                    />
+                    <span className="type-name">{type.name}</span>
+                    <button
+                      className="type-delete-btn"
+                      onClick={() => deleteType(type.id)}
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="todo-list">
             {todos.length === 0 ? (
@@ -186,6 +303,9 @@ function App() {
                 <div
                   key={todo.id}
                   className={`todo-item ${todo.completed ? 'completed' : ''}`}
+                  style={{
+                    borderLeft: `4px solid ${getTypeColor(todo.type_id || todo.typeId)}`
+                  }}
                 >
                   <button
                     className={`checkbox ${todo.completed ? 'checked' : ''}`}
@@ -201,7 +321,17 @@ function App() {
                       />
                     </svg>
                   </button>
-                  <span className="todo-text">{todo.text}</span>
+                  <div className="todo-content">
+                    <span className="todo-text">{todo.text}</span>
+                    {(todo.type_id || todo.typeId) && (
+                      <span
+                        className="todo-type-tag"
+                        style={{ backgroundColor: getTypeColor(todo.type_id || todo.typeId) }}
+                      >
+                        {getTypeName(todo.type_id || todo.typeId)}
+                      </span>
+                    )}
+                  </div>
                   <div className="todo-meta">
                     <span className={`todo-owner ${todo.owner}`}>
                       {USERS[todo.owner].name}
